@@ -13,6 +13,14 @@ server.listen()
 sockets_list = [server]
 clients = {}
 
+game_state = {
+    "players": [],
+    "pot": 0,
+    "current_turn": 0,  # Index in players list
+    "highest_bet": 0,   # Current bet to call
+    "bets": {}
+}
+
 
 def receive_message(client_socket):
     try:
@@ -39,22 +47,36 @@ while True:
             client_socket, client_address = server.accept()
             sockets_list.append(client_socket)
             clients[client_socket] = client_address
-            print("New player connected " + client_address)
+            game_state["players"].append(client_socket)
+            print("New player connected " + str(client_address))
+            broadcast({"action": "update", "message": "New player connected" + str(client_address)})
         else:
             message = receive_message(notified)
             if message is None:
-                print("Player " + clients[notified] + " disconnected")
+                print("Player " + str(clients[notified]) + " disconnected")
                 sockets_list.remove(notified)
                 del clients[notified]
+                game_state["players"].remove(notified)
                 continue
             action = message["action"]
             if action == "bet":
                 amount = message["amount"]
+                game_state["bets"][notified] = amount
+                game_state["pot"] += amount
                 print("Player bet " + amount)
-                broadcast({"action": "update", "pot": amount})
+                if amount > game_state["highest_bet"]:
+                    game_state["highest_bet"] = amount
             elif action == "fold":
                 print("Player folded")
-                broadcast({"action": "update", "player_folded": True})
+                game_state["players"].remove(notified)
+            game_state["current_turn"] = (game_state["current_turn"] + 1) % len(game_state["players"])
+            next_player = game_state["players"][game_state["current_turn"]]
+            broadcast({
+                "action": "update",
+                "pot": game_state["pot"],
+                "current_turn": clients[next_player],
+                "highest_bet": game_state["highest_bet"]
+            })
     for notified in exception_sockets:
         sockets_list.remove(notified)
         del clients[notified]
